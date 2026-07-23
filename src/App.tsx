@@ -18,7 +18,7 @@ const pages = [
   { id: 'top', label: 'Home', headingId: 'hero-title' },
   { id: 'about', label: 'About', headingId: 'about-title' },
   { id: 'experience', label: 'Experience', headingId: 'experience-title' },
-  { id: 'work', label: 'Work', headingId: 'work-title' },
+  { id: 'projects', label: 'Projects', headingId: 'projects-title' },
   { id: 'contact', label: 'Contact', headingId: 'contact-title' },
 ] as const
 
@@ -27,7 +27,6 @@ type HistoryMode = 'none' | 'push' | 'replace'
 type PagePosition = 'top' | 'bottom' | 'preserve'
 
 const navigation = pages.slice(1)
-const wheelGestureGap = 28
 const wheelEdgeTolerance = 4
 const touchThreshold = 40
 const edgeTolerance = 1
@@ -50,6 +49,29 @@ const isAtTopBoundary = (scroller: HTMLElement) =>
 const isAtBottomBoundary = (scroller: HTMLElement) =>
   scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop <= edgeTolerance
 
+const projectFilters = [
+  { key: 'all', label: 'All' },
+  { key: 'favorites', label: 'Favorites' },
+  { key: 'web-app', label: 'Web/App' },
+  { key: 'ai-ml', label: 'AI/ML' },
+  { key: 'data', label: 'Data' },
+  { key: 'embedded', label: 'Embedded' },
+] as const
+
+type ProjectFilter = (typeof projectFilters)[number]['key']
+type ProjectTag = Exclude<ProjectFilter, 'all'>
+type Project = {
+  year: string
+  title: string
+  category: string
+  description: string
+  href?: string
+  appStoreHref?: string
+  tags: ProjectTag[]
+}
+
+const projectsPerPage = 3
+
 const principles = [
   {
     number: '01',
@@ -70,33 +92,52 @@ const principles = [
   },
 ]
 
-const projects = [
+const projects: Project[] = [
   {
-    number: '01',
-    title: 'Sock Shop',
+    year: '2026',
+    title: 'Kubernetes-inspect MCP',
     category: 'Python MCP · Docker · KIND',
     description:
-      'A Kubernetes-facing MCP server for inspecting pods, deployments, services, and cluster state through production-style debugging workflows.',
+      'With the rapid adaptation of AI agents, it is imperative that they can work effectively with industry standard tools. \
+      This is a Kubernetes-facing MCP server POC for inspecting pods, deployments, services, and cluster state through production-style debugging workflows.',
     href: 'https://github.com/kkng-git/cluster-inspect-agent',
-    visual: 'cluster',
+    tags: ['favorites', 'ai-ml'],
   },
   {
-    number: '02',
+    year: '2026',
     title: 'Loot Me!',
     category: 'VisionKit · SwiftUI · Gemini · Firebase',
     description:
-      'A bill-splitting iMessage extension with a custom OCR pipeline for extracting receipt text while keeping LLM usage cost-effective.',
-    href: 'https://github.com/kkng-git/VisionTest',
-    visual: 'receipt',
+      'A bill-splitting iMessage extension with a custom OCR pipeline for robust receipt text extraction. With this extension, snap a picture and seamlessly split complex bills between one or more Apple contacts!',
+    href: 'https://github.com/Joshuliu/loot',
+    appStoreHref: 'https://apps.apple.com/us/app/loot-me/id6757330604',
+    tags: ['favorites', 'web-app'],
+  },
+  //{
+  //  year: '2024',
+  //  title: 'Event Discovery',
+  //  category: 'Web application · JavaScript · Flask',
+  //  description:
+  //    'An API-backed event discovery experience with a browser interface and a lightweight Flask service for search workflows.',
+  //  href: 'https://github.com/kkng-git/kkng-Ticketmaster-HW2',
+  //  tags: ['web-app'],
+  //},
+  {
+    year: '2025',
+    title: 'Hike Review',
+    category: 'React Native · TypeScript · Flask · MySQL · GCP',
+    description:
+      'A mobile trail-discovery platform for exploring Santa Cruz hikes, sharing community reviews, saving favorites, and organizing group outings.',
+    href: 'https://github.com/Hike-Review',
+    tags: ['favorites', 'web-app'],
   },
   {
-    number: '03',
-    title: 'Event Discovery',
-    category: 'Web application · JavaScript · Flask',
+    year: '2025',
+    title: 'Weenix Kernel',
+    category: 'C · Kernel Development · Filesystems · Virtual Memory',
     description:
-      'An API-backed event discovery experience with a browser interface and a lightweight Flask service for search workflows.',
-    href: 'https://github.com/kkng-git/kkng-Ticketmaster-HW2',
-    visual: 'events',
+      'Kernel work in C: wrote the virtual file system layer, set up S5FS, and implemented virtual memory system.',
+    tags: ['embedded'],
   },
 ]
 
@@ -105,25 +146,42 @@ const experience = [
     period: '2026 — Now',
     role: 'Engineering Intern',
     company: 'Tokonoma AI',
+    companyHref: 'https://tokonoma.ai',
     description:
       'Developing product MCP tools, enterprise SSO integrations, agent evaluation infrastructure, and continuous integration workflows.',
     detail: 'Reduced token usage by 30% through MCP tool optimization.',
+    skills: [
+      'Python',
+      'MCP',
+      'Google SAML SSO',
+      'Okta EMA',
+      'DevOps',
+      'Agent Evaluation',
+      'GitHub Actions',
+      'Starlette',
+      'Uvicorn',
+      'PostgreSQL',
+    ],
   },
   {
     period: '2022 — 2024',
     role: 'Software Engineering Intern',
     company: 'WideSense Inc.',
+    companyHref: 'https://www.linkedin.com/company/widesense/',
     description:
       'Returned for three internship terms, building customer and administrative features across frontend, backend, and database layers.',
     detail: 'Built an IoT analytics dashboard and helped maintain over 80% test coverage.',
+    skills: ['Python', 'AngularJS', 'Flask', 'PostgreSQL', 'InfluxDB', 'Jasmine', 'Alembic'],
   },
   {
     period: '2020 — 2022',
     role: 'Engineering Intern',
     company: 'Pluribus Networks',
+    companyHref: 'https://www.arista.com/en/support/pluribus-resources',
     description:
       'Built Python performance-test tooling for network switch fabrics and published high-volume stress-test data through Kafka.',
     detail: 'Analyzed Elasticsearch-backed metrics in Kibana and Grafana.',
+    skills: ['Python', 'Kafka', 'Elasticsearch', 'Kibana', 'Grafana'],
   },
 ]
 
@@ -131,14 +189,17 @@ function App() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState(pageIndexFromHash)
   const [scrolled, setScrolled] = useState(() => pageIndexFromHash() > 0)
+  const [activeProjectFilter, setActiveProjectFilter] =
+    useState<ProjectFilter>('favorites')
+  const [projectPage, setProjectPage] = useState(1)
   const pageDeckRef = useRef<HTMLElement | null>(null)
   const pageScrollRefs = useRef<Array<HTMLDivElement | null>>([])
+  const projectResultsRef = useRef<HTMLDivElement | null>(null)
   const activeIndexRef = useRef(activeIndex)
   const menuOpenRef = useRef(menuOpen)
   const transitioningRef = useRef(false)
   const transitionTimerRef = useRef<number | null>(null)
   const pendingFocusRef = useRef(false)
-  const lastWheelEventAtRef = useRef(0)
   const touchGestureRef = useRef({
     active: false,
     startX: 0,
@@ -149,6 +210,17 @@ function App() {
     startedAtBottom: false,
     triggered: false,
   })
+
+  const filteredProjects =
+    activeProjectFilter === 'all'
+      ? projects
+      : projects.filter((project) => project.tags.includes(activeProjectFilter))
+  const totalProjectPages = Math.ceil(filteredProjects.length / projectsPerPage)
+  const safeProjectPage = Math.min(projectPage, Math.max(1, totalProjectPages))
+  const visibleProjects = filteredProjects.slice(
+    (safeProjectPage - 1) * projectsPerPage,
+    safeProjectPage * projectsPerPage,
+  )
 
   const resetTouchGesture = useCallback(() => {
     touchGestureRef.current = {
@@ -316,10 +388,9 @@ function App() {
       event.preventDefault()
 
       if (canScrollWithinPage) {
-        const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
         scroller.scrollBy({
           top: direction * (distance || scroller.clientHeight * 0.82),
-          behavior: reducedMotion ? 'auto' : 'smooth',
+          behavior: 'auto',
         })
         return
       }
@@ -362,12 +433,6 @@ function App() {
       const scroller = pageScrollRefs.current[currentIndex]
       if (!scroller) return
 
-      const now = performance.now()
-      const startsNewGesture =
-        lastWheelEventAtRef.current === 0 ||
-        now - lastWheelEventAtRef.current > wheelGestureGap
-      lastWheelEventAtRef.current = now
-
       const multiplier =
         event.deltaMode === WheelEvent.DOM_DELTA_LINE
           ? 16
@@ -381,10 +446,32 @@ function App() {
         direction > 0
           ? Math.max(0, maximumScroll - scroller.scrollTop)
           : Math.max(0, scroller.scrollTop)
-      const atBoundary = distanceToBoundary <= wheelEdgeTolerance
+      const startedAtBoundary = distanceToBoundary <= wheelEdgeTolerance
       const targetIndex = currentIndex + direction
 
-      if (!atBoundary) return
+      if (!startedAtBoundary) {
+        const scrollTopBeforeEvent = scroller.scrollTop
+
+        window.requestAnimationFrame(() => {
+          if (
+            activeIndexRef.current !== currentIndex ||
+            transitioningRef.current ||
+            Math.abs(scroller.scrollTop - scrollTopBeforeEvent) > 0.5
+          ) {
+            return
+          }
+
+          const latestMaximumScroll = Math.max(
+            0,
+            scroller.scrollHeight - scroller.clientHeight,
+          )
+          scroller.scrollTop = Math.max(
+            0,
+            Math.min(latestMaximumScroll, scrollTopBeforeEvent + delta),
+          )
+        })
+        return
+      }
 
       if (
         targetIndex < 0 ||
@@ -397,8 +484,6 @@ function App() {
 
       if (event.cancelable) event.preventDefault()
       scroller.scrollTop = direction > 0 ? maximumScroll : 0
-
-      if (!startsNewGesture) return
 
       goToPage(targetIndex, {
         historyMode: 'replace',
@@ -543,7 +628,6 @@ function App() {
   ) => {
     event.preventDefault()
     setMenuOpen(false)
-    lastWheelEventAtRef.current = 0
     resetTouchGesture()
     goToPage(pages.findIndex((page) => page.id === id), {
       historyMode: 'push',
@@ -553,12 +637,35 @@ function App() {
   }
 
   const handleCaretNavigation = (targetIndex: number) => {
-    lastWheelEventAtRef.current = 0
     resetTouchGesture()
     goToPage(targetIndex, {
       historyMode: 'replace',
       focus: true,
       position: 'top',
+    })
+  }
+
+  const handleProjectFilterChange = (filter: ProjectFilter) => {
+    setActiveProjectFilter(filter)
+    setProjectPage(1)
+  }
+
+  const handleProjectPageChange = (nextPage: number) => {
+    if (
+      nextPage < 1 ||
+      nextPage > totalProjectPages ||
+      nextPage === safeProjectPage
+    ) {
+      return
+    }
+
+    setProjectPage(nextPage)
+    window.requestAnimationFrame(() => {
+      const scroller = pageScrollRefs.current[3]
+      const results = projectResultsRef.current
+      if (!scroller || !results) return
+
+      scroller.scrollTop = Math.max(0, results.offsetTop - 24)
     })
   }
 
@@ -655,8 +762,8 @@ function App() {
               I’m always excited to meet new people, so reach out if you’re looking to start something new.
             </p>
             <div className="hero-actions">
-              <a className="arrow-link" href="#work" onClick={(event) => handlePageLink(event, 'work')}>
-                See selected work <span aria-hidden="true">↘</span>
+              <a className="arrow-link" href="#projects" onClick={(event) => handlePageLink(event, 'projects')}>
+                See selected projects <span aria-hidden="true">↘</span>
               </a>
               <a className="arrow-link arrow-link-muted" href={resume} target="_blank" rel="noreferrer">
                 View résumé <span aria-hidden="true">↗</span>
@@ -763,21 +870,35 @@ function App() {
           <div className="section experience">
           <div className="section-label">
             <span>02</span>
-            <p>Experience</p>
-          </div>
-
-          <div className="experience-heading">
-            <p className="overline">Background</p>
-            <h2 id="experience-title" tabIndex={-1}>Learning deeply.<br />Building practically.</h2>
+            <h2 id="experience-title" tabIndex={-1}>Experience</h2>
           </div>
 
           <div className="experience-list">
             {experience.map((item) => (
               <article className="experience-item" key={`${item.company}-${item.period}`}>
                 <p className="experience-year">{item.period}</p>
-                <div>
+                <div className="experience-role">
                   <h3>{item.role}</h3>
-                  <p>{item.company}</p>
+                  {item.companyHref ? (
+                    <a
+                      className="experience-company"
+                      href={item.companyHref}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {item.company} <span aria-hidden="true">↗</span>
+                    </a>
+                  ) : (
+                    <p>{item.company}</p>
+                  )}
+                </div>
+                <div
+                  className="experience-skills"
+                  aria-label={`${item.company} technologies`}
+                >
+                  {item.skills.map((skill) => (
+                    <span key={skill}>{skill}</span>
+                  ))}
                 </div>
                 <div className="experience-description">
                   <p>{item.description}</p>
@@ -786,88 +907,117 @@ function App() {
               </article>
             ))}
           </div>
-
-          <div className="education-line">
-            <p>Education</p>
-            <div>
-              <strong>University of Southern California</strong>
-              <span>M.S. Computer Science · 2025 — 2027</span>
-            </div>
-            <div>
-              <strong>University of California, Santa Cruz</strong>
-              <span>B.S. Computer Science · 2021 — 2025</span>
-            </div>
-          </div>
-
-          <div className="tool-line" aria-label="Selected technologies">
-            {['TypeScript', 'React', 'Python', 'Kubernetes', 'Flask', 'MCP'].map((tool) => (
-              <span key={tool}>{tool}</span>
-            ))}
-          </div>
           </div>
           </div>
         </section>
 
-        <section className="page" id="work" aria-labelledby="work-title" {...pageA11yProps(3)}>
+        <section className="page" id="projects" aria-labelledby="projects-title" {...pageA11yProps(3)}>
           <div
             className="page-scroll"
             ref={(node) => { pageScrollRefs.current[3] = node }}
             onScroll={(event) => handlePageScroll(3, event)}
           >
-          <div className="section work">
+          <div className="section projects">
           <div className="section-label">
             <span>03</span>
-            <p>Work</p>
+            <h2 id="projects-title" tabIndex={-1}>Projects</h2>
           </div>
 
-          <div className="work-heading">
-            <div>
-              <p className="overline">Selected projects</p>
-              <h2 id="work-title" tabIndex={-1}>Ideas made tangible.</h2>
-            </div>
-            <p>
-              A small selection of public experiments across intelligent tools, infrastructure, and the web.
-            </p>
-          </div>
-
-          <div className="project-list">
-            {projects.map((project) => (
-              <a
-                className="project"
-                key={project.title}
-                href={project.href}
-                target="_blank"
-                rel="noreferrer"
-                aria-label={`${project.title}, view project on GitHub`}
-              >
-                <div className={`project-visual ${project.visual}`} aria-hidden="true">
-                  <span className="project-number">{project.number}</span>
-                  <div className="project-lines">
-                    <span />
-                    <span />
-                    <span />
-                  </div>
-                  <p>
-                    {project.visual === 'cluster'
-                      ? 'inspect()'
-                      : project.visual === 'receipt'
-                        ? 'scan / split'
-                        : 'search / discover'}
-                  </p>
-                </div>
-                <div className="project-copy">
-                  <p className="project-category">{project.category}</p>
-                  <h3>{project.title}</h3>
-                  <p>{project.description}</p>
-                  <span className="project-link">View repository <span aria-hidden="true">↗</span></span>
-                </div>
-              </a>
+          <div className="project-filters" role="group" aria-label="Filter projects">
+            {projectFilters.map((filter, index) => (
+              <span className="project-filter-option" key={filter.key}>
+                {index > 0 && <span className="project-filter-separator" aria-hidden="true">|</span>}
+                <button
+                  className={activeProjectFilter === filter.key ? 'is-active' : undefined}
+                  type="button"
+                  aria-pressed={activeProjectFilter === filter.key}
+                  onClick={() => handleProjectFilterChange(filter.key)}
+                >
+                  {filter.label}
+                </button>
+              </span>
             ))}
           </div>
 
-          <a className="all-work-link" href="https://github.com/kkng-git?tab=repositories" target="_blank" rel="noreferrer">
-            Browse all GitHub projects <span aria-hidden="true">↗</span>
-          </a>
+          <div className="project-results" ref={projectResultsRef}>
+            {visibleProjects.length > 0 ? (
+              <div className="project-list">
+                {visibleProjects.map((project) => (
+                  <article className="project" key={project.title}>
+                    <div className="project-copy">
+                      <div className="project-meta">
+                        <time className="project-year" dateTime={project.year}>
+                          {project.year}
+                        </time>
+                        <p className="project-category">{project.category}</p>
+                      </div>
+                      <h3>{project.title}</h3>
+                      <p>{project.description}</p>
+                      {(project.href || project.appStoreHref) && (
+                        <div className="project-links">
+                          {project.href && (
+                            <a
+                              className="project-link"
+                              href={project.href}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              View repository <span aria-hidden="true">↗</span>
+                            </a>
+                          )}
+                          {project.appStoreHref && (
+                            <a
+                              className="project-link"
+                              href={project.appStoreHref}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              View on App Store <span aria-hidden="true">↗</span>
+                            </a>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className="project-empty" role="status">
+                <p>In the works!</p>
+              </div>
+            )}
+          </div>
+
+          {totalProjectPages > 1 && (
+            <nav className="project-pagination" aria-label="Project result pages">
+              <button
+                type="button"
+                disabled={safeProjectPage === 1}
+                onClick={() => handleProjectPageChange(safeProjectPage - 1)}
+              >
+                ← Previous
+              </button>
+              {Array.from({ length: totalProjectPages }, (_, index) => index + 1).map((page) => (
+                <button
+                  className={safeProjectPage === page ? 'is-active' : undefined}
+                  type="button"
+                  key={page}
+                  aria-current={safeProjectPage === page ? 'page' : undefined}
+                  aria-label={`Project results page ${page}`}
+                  onClick={() => handleProjectPageChange(page)}
+                >
+                  {page}
+                </button>
+              ))}
+              <button
+                type="button"
+                disabled={safeProjectPage === totalProjectPages}
+                onClick={() => handleProjectPageChange(safeProjectPage + 1)}
+              >
+                Next →
+              </button>
+            </nav>
+          )}
           </div>
           </div>
         </section>
@@ -887,17 +1037,17 @@ function App() {
             <span>something new.</span>
           </h2>
           <p>
-            I’m always excited to meet thoughtful people, compare notes, and hear about a problem worth solving.
+            Whether its engineering related or something creative, I'm always open to learn more about it. Hit me up if you're looking to share ideas or talk about cool things!
           </p>
           <div className="contact-actions">
             <a className="contact-link" href="mailto:ng.kendrick@yahoo.com">
-              Send me an email <span aria-hidden="true">↗</span>
+              Email <span aria-hidden="true">↗</span>
             </a>
             <a className="contact-link" href="https://www.linkedin.com/in/kkng01" target="_blank" rel="noreferrer">
-              Connect on LinkedIn <span aria-hidden="true">↗</span>
+              LinkedIn <span aria-hidden="true">↗</span>
             </a>
             <a className="contact-link" href="https://github.com/kkng-git" target="_blank" rel="noreferrer">
-              Find me on GitHub <span aria-hidden="true">↗</span>
+              GitHub <span aria-hidden="true">↗</span>
             </a>
           </div>
           </div>
