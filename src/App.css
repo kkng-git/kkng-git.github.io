@@ -1056,20 +1056,21 @@ a {
   .hero {
     grid-template-columns: minmax(0, 1.08fr) minmax(250px, 0.72fr);
     gap: 48px;
-    min-height: 100svh;
-    padding: clamp(150px, 17vh, 230px) 28px 90px;
+    min-height: clamp(720px, calc(100svh - 176px), 860px);
+    margin: max(88px, calc((100svh - 860px) / 2)) auto;
+    padding: clamp(96px, 11svh, 118px) 28px clamp(76px, 8svh, 92px);
   }
 
   .hero-frame-copy {
-    top: 104px;
+    top: 0;
     width: 48%;
-    height: 332px;
+    height: clamp(240px, 32%, 280px);
   }
 
   .hero-frame-image {
-    bottom: 108px;
+    bottom: 0;
     width: 43%;
-    height: 312px;
+    height: clamp(240px, 32%, 280px);
   }
 
   .hero-copy {
@@ -1085,8 +1086,9 @@ a {
   }
 
   .portrait-block {
-    width: min(100%, 355px);
-    margin: 0 auto 42px;
+    align-self: center;
+    width: min(100%, 340px);
+    margin: 0 auto;
   }
 
   .section {
@@ -1258,11 +1260,11 @@ a {
   }
 
   .hero-frame-copy {
-    width: 39%;
+    width: 45%;
   }
 
   .hero-frame-image {
-    width: 37%;
+    width: 40%;
   }
 
   .section {
