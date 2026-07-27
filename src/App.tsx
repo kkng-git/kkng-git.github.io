@@ -10,6 +10,7 @@ import {
 import cafeWorkspace from './assets/images/cafe-grind-workspace.jpeg'
 import portrait from './assets/images/kendrick-portrait.jpg'
 import raceCarGraduation from './assets/images/kendrick-race-car-graduation.jpg'
+import MusicPanel, { type OverlayPhase } from './MusicPanel'
 import './App.css'
 
 const resume = '/documents/kendrick-ng-resume.pdf'
@@ -25,6 +26,7 @@ const pages = [
 type PageId = (typeof pages)[number]['id']
 type HistoryMode = 'none' | 'push' | 'replace'
 type PagePosition = 'top' | 'bottom' | 'preserve'
+type OverlayTarget = 'menu' | 'music'
 
 const navigation = pages.slice(1)
 const wheelEdgeTolerance = 4
@@ -32,6 +34,7 @@ const touchThreshold = 40
 const edgeTolerance = 1
 const transitionDuration = 480
 const transitionGuard = 100
+const overlayExitDuration = 240
 
 const pageIndexFromHash = (hash = window.location.hash) => {
   const id = hash.replace('#', '') as PageId
@@ -48,6 +51,85 @@ const isAtTopBoundary = (scroller: HTMLElement) =>
 
 const isAtBottomBoundary = (scroller: HTMLElement) =>
   scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop <= edgeTolerance
+
+const useOverlayPresence = (open: boolean) => {
+  const [phase, setPhase] = useState<OverlayPhase>(open ? 'open' : 'closed')
+  const enterFrameRef = useRef<number | null>(null)
+  const exitTimerRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    if (enterFrameRef.current !== null) {
+      window.cancelAnimationFrame(enterFrameRef.current)
+      enterFrameRef.current = null
+    }
+
+    if (exitTimerRef.current !== null) {
+      window.clearTimeout(exitTimerRef.current)
+      exitTimerRef.current = null
+    }
+
+    const reducedMotion = window.matchMedia(
+      '(prefers-reduced-motion: reduce)',
+    ).matches
+
+    if (open) {
+      if (reducedMotion) {
+        queueMicrotask(() => setPhase('open'))
+        return
+      }
+
+      queueMicrotask(() => setPhase('entering'))
+      enterFrameRef.current = window.requestAnimationFrame(() => {
+        enterFrameRef.current = window.requestAnimationFrame(() => {
+          enterFrameRef.current = null
+          setPhase('open')
+        })
+      })
+      return
+    }
+
+    if (reducedMotion) {
+      queueMicrotask(() => setPhase('closed'))
+      return
+    }
+
+    queueMicrotask(() => {
+      setPhase((currentPhase) =>
+        currentPhase === 'closed' ? 'closed' : 'closing',
+      )
+    })
+    exitTimerRef.current = window.setTimeout(() => {
+      exitTimerRef.current = null
+      setPhase('closed')
+    }, overlayExitDuration)
+
+    return () => {
+      if (enterFrameRef.current !== null) {
+        window.cancelAnimationFrame(enterFrameRef.current)
+        enterFrameRef.current = null
+      }
+
+      if (exitTimerRef.current !== null) {
+        window.clearTimeout(exitTimerRef.current)
+        exitTimerRef.current = null
+      }
+    }
+  }, [open])
+
+  useEffect(() => () => {
+    if (enterFrameRef.current !== null) {
+      window.cancelAnimationFrame(enterFrameRef.current)
+    }
+    if (exitTimerRef.current !== null) {
+      window.clearTimeout(exitTimerRef.current)
+    }
+  }, [])
+
+  return {
+    phase,
+    present: phase !== 'closed',
+  }
+}
 
 const projectFilters = [
   { key: 'all', label: 'All' },
@@ -187,6 +269,12 @@ const experience = [
 
 function App() {
   const [menuOpen, setMenuOpen] = useState(false)
+  const [musicOpen, setMusicOpen] = useState(false)
+  const [pendingOverlay, setPendingOverlay] =
+    useState<OverlayTarget | null>(null)
+  const [mobileViewport, setMobileViewport] = useState(
+    () => window.matchMedia('(max-width: 760px)').matches,
+  )
   const [activeIndex, setActiveIndex] = useState(pageIndexFromHash)
   const [scrolled, setScrolled] = useState(() => pageIndexFromHash() > 0)
   const [activeProjectFilter, setActiveProjectFilter] =
@@ -195,8 +283,11 @@ function App() {
   const pageDeckRef = useRef<HTMLElement | null>(null)
   const pageScrollRefs = useRef<Array<HTMLDivElement | null>>([])
   const projectResultsRef = useRef<HTMLDivElement | null>(null)
+  const musicTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const menuTriggerRef = useRef<HTMLButtonElement | null>(null)
   const activeIndexRef = useRef(activeIndex)
   const menuOpenRef = useRef(menuOpen)
+  const overlayOpenRef = useRef(menuOpen || musicOpen)
   const transitioningRef = useRef(false)
   const transitionTimerRef = useRef<number | null>(null)
   const pendingFocusRef = useRef(false)
@@ -210,6 +301,10 @@ function App() {
     startedAtBottom: false,
     triggered: false,
   })
+  const menuPresence = useOverlayPresence(menuOpen)
+  const musicPresence = useOverlayPresence(musicOpen)
+  const menuOverlayPresent = mobileViewport && menuPresence.present
+  const overlayPresent = menuOverlayPresent || musicPresence.present
 
   const filteredProjects =
     activeProjectFilter === 'all'
@@ -326,6 +421,38 @@ function App() {
   }, [menuOpen])
 
   useEffect(() => {
+    overlayOpenRef.current = overlayPresent
+  }, [overlayPresent])
+
+  useEffect(() => {
+    if (pendingOverlay === 'music' && !menuPresence.present) {
+      queueMicrotask(() => {
+        setPendingOverlay(null)
+        setMusicOpen(true)
+      })
+    } else if (pendingOverlay === 'menu' && !musicPresence.present) {
+      queueMicrotask(() => {
+        setPendingOverlay(null)
+        setMenuOpen(true)
+      })
+    }
+  }, [menuPresence.present, musicPresence.present, pendingOverlay])
+
+  useEffect(() => {
+    const query = window.matchMedia('(max-width: 760px)')
+    const handleChange = (event: MediaQueryListEvent) => {
+      setMobileViewport(event.matches)
+      if (!event.matches) {
+        setMenuOpen(false)
+        setPendingOverlay((target) => target === 'menu' ? null : target)
+      }
+    }
+
+    query.addEventListener('change', handleChange)
+    return () => query.removeEventListener('change', handleChange)
+  }, [])
+
+  useEffect(() => {
     const previousScrollRestoration = window.history.scrollRestoration
     window.history.scrollRestoration = 'manual'
 
@@ -346,12 +473,16 @@ function App() {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && menuOpenRef.current) {
+        setPendingOverlay(null)
         setMenuOpen(false)
+        window.requestAnimationFrame(() => {
+          menuTriggerRef.current?.focus({ preventScroll: true })
+        })
         return
       }
 
       if (
-        menuOpenRef.current ||
+        overlayOpenRef.current ||
         event.defaultPrevented ||
         event.altKey ||
         event.ctrlKey ||
@@ -421,7 +552,7 @@ function App() {
 
     const handleWheel = (event: WheelEvent) => {
       if (
-        menuOpenRef.current ||
+        overlayOpenRef.current ||
         event.ctrlKey ||
         event.deltaY === 0 ||
         Math.abs(event.deltaY) < Math.abs(event.deltaX) * 0.6
@@ -492,7 +623,7 @@ function App() {
     }
 
     const handleTouchStart = (event: TouchEvent) => {
-      if (event.touches.length !== 1 || menuOpenRef.current) {
+      if (event.touches.length !== 1 || overlayOpenRef.current) {
         resetTouchGesture()
         return
       }
@@ -516,7 +647,7 @@ function App() {
       if (
         !gesture.active ||
         gesture.triggered ||
-        menuOpenRef.current ||
+        overlayOpenRef.current ||
         transitioningRef.current
       ) {
         return false
@@ -627,7 +758,9 @@ function App() {
     options: { position?: PagePosition } = {},
   ) => {
     event.preventDefault()
+    setPendingOverlay(null)
     setMenuOpen(false)
+    setMusicOpen(false)
     resetTouchGesture()
     goToPage(pages.findIndex((page) => page.id === id), {
       historyMode: 'push',
@@ -679,37 +812,108 @@ function App() {
     inert: activeIndex !== index,
   })
 
+  const closeMusic = useCallback(() => {
+    setMusicOpen(false)
+    window.requestAnimationFrame(() => {
+      musicTriggerRef.current?.focus({ preventScroll: true })
+    })
+  }, [])
+
+  const toggleMusic = () => {
+    if (musicOpen) {
+      setPendingOverlay(null)
+      closeMusic()
+      return
+    }
+
+    if (menuPresence.present) {
+      setPendingOverlay((target) => target === 'music' ? null : 'music')
+      setMenuOpen(false)
+      return
+    }
+
+    setPendingOverlay(null)
+    setMusicOpen(true)
+  }
+
+  const toggleMenu = () => {
+    if (menuOpen) {
+      setPendingOverlay(null)
+      setMenuOpen(false)
+      return
+    }
+
+    if (musicPresence.present) {
+      setPendingOverlay((target) => target === 'menu' ? null : 'menu')
+      setMusicOpen(false)
+      return
+    }
+
+    setPendingOverlay(null)
+    setMenuOpen(true)
+  }
+
   return (
-    <div className={`site${menuOpen ? ' is-menu-open' : ''}`}>
+    <div
+      className={`site${menuOverlayPresent ? ' is-menu-open' : ''}${musicPresence.present ? ' is-player-open' : ''}`}
+    >
       <a className="skip-link" href="#main" onClick={handleSkipLink}>Skip to content</a>
 
       <header className={`site-header${scrolled ? ' is-scrolled' : ''}`}>
-        <button
-          className="menu-button"
-          type="button"
-          aria-expanded={menuOpen}
-          aria-controls="primary-navigation"
-          onClick={() => setMenuOpen((open) => !open)}
-        >
-          {menuOpen ? 'Close' : 'Menu'}
-        </button>
-
         <nav
           id="primary-navigation"
-          className={`site-nav${menuOpen ? ' is-open' : ''}`}
+          className={`site-nav${menuPresence.present ? ' is-present' : ''}${menuPresence.phase === 'open' ? ' is-open' : ''}${menuPresence.phase === 'closing' ? ' is-closing' : ''}`}
           aria-label="Primary navigation"
+          aria-hidden={mobileViewport && !menuOpen ? true : undefined}
+          inert={mobileViewport && !menuOpen ? true : undefined}
         >
-          {navigation.map((item) => (
+          {navigation.map((item, index) => (
             <a
               key={item.label}
               href={`#${item.id}`}
               aria-current={activeIndex === pages.findIndex((page) => page.id === item.id) ? 'page' : undefined}
               onClick={(event) => handlePageLink(event, item.id)}
+              style={{
+                '--motion-delay': `${40 + index * 32}ms`,
+                '--motion-exit-delay': `${(navigation.length - index - 1) * 16}ms`,
+              } as CSSProperties}
             >
               {item.label}
             </a>
           ))}
         </nav>
+
+        <div className="header-actions">
+          <button
+            ref={musicTriggerRef}
+            className="music-button"
+            type="button"
+            aria-expanded={musicOpen}
+            aria-controls="music-panel"
+            aria-haspopup="dialog"
+            onClick={toggleMusic}
+          >
+            Music
+          </button>
+
+          <button
+            ref={menuTriggerRef}
+            className="menu-button"
+            type="button"
+            aria-expanded={menuOpen}
+            aria-controls="primary-navigation"
+            onClick={toggleMenu}
+          >
+            {menuOpen ? 'Close' : 'Menu'}
+          </button>
+        </div>
+
+        <MusicPanel
+          isMobile={mobileViewport}
+          onClose={closeMusic}
+          open={musicOpen}
+          phase={musicPresence.phase}
+        />
       </header>
 
       {activeIndex > 0 && (
@@ -717,6 +921,8 @@ function App() {
           className="page-caret page-caret-top"
           type="button"
           aria-label={`Go to previous section: ${pages[activeIndex - 1].label}`}
+          aria-hidden={overlayPresent ? true : undefined}
+          tabIndex={overlayPresent ? -1 : undefined}
           onClick={() => handleCaretNavigation(activeIndex - 1)}
         >
           <span aria-hidden="true" />
@@ -728,6 +934,8 @@ function App() {
           className="page-caret page-caret-bottom"
           type="button"
           aria-label={`Go to next section: ${pages[activeIndex + 1].label}`}
+          aria-hidden={overlayPresent ? true : undefined}
+          tabIndex={overlayPresent ? -1 : undefined}
           onClick={() => handleCaretNavigation(activeIndex + 1)}
         >
           <span aria-hidden="true" />
@@ -738,6 +946,7 @@ function App() {
         ref={pageDeckRef}
         id="main"
         className="page-deck"
+        inert={mobileViewport && overlayPresent ? true : undefined}
       >
         <div
           className="page-track"
