@@ -891,9 +891,15 @@ function App() {
             aria-expanded={musicOpen}
             aria-controls="music-panel"
             aria-haspopup="dialog"
+            aria-label={
+              musicOpen
+                ? 'Close music player'
+                : 'Open music player'
+            }
             onClick={toggleMusic}
           >
-            Music
+            <span>Music</span>
+            <span className="music-button-icon" aria-hidden="true">▶</span>
           </button>
 
           <button

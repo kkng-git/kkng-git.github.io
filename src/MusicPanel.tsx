@@ -1,5 +1,6 @@
 import {
   type CSSProperties,
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -70,6 +71,11 @@ type FeaturedItem = {
 }
 
 type LoadState = 'loading' | 'ready' | 'empty' | 'error'
+type EmbedState =
+  | 'ready'
+  | 'requesting'
+  | 'playing'
+  | 'paused'
 
 export type OverlayPhase = 'closed' | 'entering' | 'open' | 'closing'
 
@@ -80,9 +86,105 @@ type MusicPanelProps = {
   phase: OverlayPhase
 }
 
+type SpotifyEmbedEvent = {
+  data?: {
+    duration?: number
+    isBuffering?: boolean
+    isPaused?: boolean
+    playingURI?: string
+    position?: number
+  }
+}
+
+type SpotifyEmbedController = {
+  addListener: (
+    event: 'ready' | 'playback_started' | 'playback_update',
+    listener: (event: SpotifyEmbedEvent) => void,
+  ) => void
+  destroy: () => void
+  loadEntity: (
+    spotifyUriOrUrl: string,
+    preferVideo?: boolean,
+    startAt?: number,
+  ) => void
+  pause: () => void
+  play: () => void
+}
+
+type SpotifyIframeApi = {
+  createController: (
+    element: HTMLElement,
+    options: {
+      height: number
+      uri?: string
+      url?: string
+      width: string
+    },
+    callback: (controller: SpotifyEmbedController) => void,
+  ) => void
+}
+
+declare global {
+  interface Window {
+    __kendrickSpotifyIframeApi?: SpotifyIframeApi
+    onSpotifyIframeApiReady?: (api: SpotifyIframeApi) => void
+  }
+}
+
 const apiBaseUrl = (
   import.meta.env.VITE_SPOTIFY_API_BASE_URL || 'http://localhost:8080'
 ).replace(/\/+$/, '')
+const spotifyIframeScriptId = 'spotify-iframe-api'
+const spotifyIframeScriptUrl = 'https://open.spotify.com/embed/iframe-api/v1'
+const spotifyEmbedHeight = 152
+const playbackFallbackDelay = 3200
+const spotifyReadyFallbackDelay = 8000
+
+const reportMusicPlayerError = (message: string, error?: unknown) => {
+  if (error === undefined) {
+    console.error('[music-player]', message)
+    return
+  }
+
+  console.error('[music-player]', message, error)
+}
+
+let spotifyIframeApiPromise: Promise<SpotifyIframeApi> | null = null
+
+const loadSpotifyIframeApi = () => {
+  if (window.__kendrickSpotifyIframeApi) {
+    return Promise.resolve(window.__kendrickSpotifyIframeApi)
+  }
+
+  if (spotifyIframeApiPromise) return spotifyIframeApiPromise
+
+  spotifyIframeApiPromise = new Promise<SpotifyIframeApi>((resolve, reject) => {
+    const previousReadyHandler = window.onSpotifyIframeApiReady
+
+    window.onSpotifyIframeApiReady = (api) => {
+      window.__kendrickSpotifyIframeApi = api
+      resolve(api)
+      previousReadyHandler?.(api)
+    }
+
+    const existingScript = document.getElementById(spotifyIframeScriptId)
+    if (existingScript) {
+      existingScript.remove()
+    }
+
+    const script = document.createElement('script')
+    script.id = spotifyIframeScriptId
+    script.src = spotifyIframeScriptUrl
+    script.async = true
+    script.addEventListener('error', () => {
+      spotifyIframeApiPromise = null
+      reject(new Error('Spotify iFrame API failed to load'))
+    }, { once: true })
+    document.body.appendChild(script)
+  })
+
+  return spotifyIframeApiPromise
+}
 
 const focusableSelector = [
   'a[href]',
@@ -139,6 +241,8 @@ const artistLine = (item: PlayableItem) => {
 const collectionLine = (item: PlayableItem) =>
   item.type === 'episode' ? item.show?.name : item.album?.name
 
+const playbackSource = (item: PlayableItem) => item.uri || item.spotifyUrl
+
 function ArtworkView({
   className,
   item,
@@ -166,38 +270,73 @@ function ArtworkView({
   )
 }
 
-function FeaturedCard({ item }: { item: PlayableItem }) {
+function FeaturedCard({
+  embedReady,
+  embedState,
+  item,
+  live,
+  onPause,
+  onPlay,
+}: {
+  embedReady: boolean
+  embedState: EmbedState
+  item: PlayableItem
+  live: boolean
+  onPause: () => void
+  onPlay: () => void
+}) {
   const className =
     'music-feature-card music-motion-item music-data-reveal'
   const style = motionStyle(3)
-  const content = (
-    <>
-      <ArtworkView className="music-feature-artwork" item={item} />
+  const playbackAvailable = live && Boolean(playbackSource(item))
+  const playbackPending = embedState === 'requesting'
+  const playbackActive = embedState === 'playing'
+
+  return (
+    <div className={className} style={style}>
+      <span className="music-feature-artwork-shell">
+        <ArtworkView className="music-feature-artwork" item={item} />
+        {playbackAvailable && (
+          <button
+            className="music-artwork-control"
+            type="button"
+            aria-label={`${playbackActive ? 'Pause' : 'Play'} ${item.name}`}
+            disabled={!embedReady || playbackPending}
+            onClick={playbackActive ? onPause : onPlay}
+          >
+            <span
+              className={`music-artwork-playback-icon${
+                playbackPending
+                  ? ' is-loading'
+                  : playbackActive
+                    ? ' is-pause'
+                    : ' is-play'
+              }`}
+              aria-hidden="true"
+            />
+          </button>
+        )}
+      </span>
+
       <span className="music-feature-copy">
-        <strong>{item.name}</strong>
+        {item.spotifyUrl ? (
+          <a
+            className="music-feature-title"
+            href={item.spotifyUrl}
+            target="_blank"
+            rel="noreferrer"
+          >
+            <strong>{item.name}</strong>
+          </a>
+        ) : (
+          <strong>{item.name}</strong>
+        )}
         <span>{artistLine(item)}</span>
         {collectionLine(item) && (
           <span className="music-collection">{collectionLine(item)}</span>
         )}
-        <span className="music-open-label">Open on Spotify ↗</span>
       </span>
-    </>
-  )
-
-  if (!item.spotifyUrl) {
-    return <div className={className} style={style}>{content}</div>
-  }
-
-  return (
-    <a
-      className={className}
-      href={item.spotifyUrl}
-      target="_blank"
-      rel="noreferrer"
-      style={style}
-    >
-      {content}
-    </a>
+    </div>
   )
 }
 
@@ -247,12 +386,240 @@ export default function MusicPanel({
 }: MusicPanelProps) {
   const [featured, setFeatured] = useState<FeaturedItem | null>(null)
   const [featuredState, setFeaturedState] = useState<LoadState>('loading')
+  const [embedReady, setEmbedReady] = useState(false)
+  const [embedState, setEmbedState] = useState<EmbedState>('ready')
   const [recommendations, setRecommendations] =
     useState<RecommendationsResponse | null>(null)
   const [recommendationsState, setRecommendationsState] =
     useState<LoadState>('loading')
   const panelRef = useRef<HTMLElement | null>(null)
   const closeButtonRef = useRef<HTMLButtonElement | null>(null)
+  const embedEngineRef = useRef<HTMLDivElement | null>(null)
+  const embedHostRef = useRef<HTMLDivElement | null>(null)
+  const embedControllerRef = useRef<SpotifyEmbedController | null>(null)
+  const playbackFallbackTimerRef = useRef<number | null>(null)
+  const followUpRefreshTimerRef = useRef<number | null>(null)
+  const followUpAbortRef = useRef<AbortController | null>(null)
+  const refreshCurrentlyPlayingRef = useRef<() => void>(() => undefined)
+  const autoFollowEnabledRef = useRef(false)
+  const controllerReadyRef = useRef(false)
+  const endRefreshInFlightRef = useRef(false)
+  const loadedItemIdRef = useRef<string | null>(null)
+  const lastPlaybackDurationRef = useRef(0)
+  const lastPlaybackPositionRef = useRef(0)
+  const playbackHasStartedRef = useRef(false)
+  const playbackSessionStartedRef = useRef(false)
+  const programmaticStartPendingRef = useRef(false)
+  const pendingUserPlaybackRef = useRef(false)
+  const featuredRef = useRef<FeaturedItem | null>(featured)
+
+  useEffect(() => {
+    featuredRef.current = featured
+  }, [featured])
+
+  const clearPlaybackFallback = useCallback(() => {
+    if (playbackFallbackTimerRef.current === null) return
+
+    window.clearTimeout(playbackFallbackTimerRef.current)
+    playbackFallbackTimerRef.current = null
+  }, [])
+
+  const clearFollowUpRefresh = useCallback(() => {
+    if (followUpRefreshTimerRef.current !== null) {
+      window.clearTimeout(followUpRefreshTimerRef.current)
+      followUpRefreshTimerRef.current = null
+    }
+
+    followUpAbortRef.current?.abort()
+    followUpAbortRef.current = null
+    endRefreshInFlightRef.current = false
+  }, [])
+
+  const prepareLivePlayback = useCallback((nextFeatured: FeaturedItem) => {
+    const controller = embedControllerRef.current
+    if (!controller || nextFeatured.mode !== 'live') return false
+
+    const source = playbackSource(nextFeatured.item)
+    if (!source) {
+      reportMusicPlayerError('The live item does not have a Spotify source.')
+      setEmbedState('ready')
+      return false
+    }
+
+    controller.loadEntity(source, false, 0)
+    loadedItemIdRef.current = nextFeatured.item.id
+    lastPlaybackDurationRef.current = 0
+    lastPlaybackPositionRef.current = 0
+    playbackHasStartedRef.current = false
+    return true
+  }, [])
+
+  const requestLivePlayback = useCallback((
+    requestedFeatured?: FeaturedItem,
+  ) => {
+    const nextFeatured = requestedFeatured ?? featuredRef.current
+    const controller = embedControllerRef.current
+
+    if (nextFeatured?.mode !== 'live') {
+      pendingUserPlaybackRef.current = false
+      setEmbedState('ready')
+      reportMusicPlayerError('Playback was requested without a live track.')
+      return
+    }
+
+    if (!controller || !controllerReadyRef.current) {
+      pendingUserPlaybackRef.current = true
+      clearPlaybackFallback()
+      setEmbedState('requesting')
+
+      playbackFallbackTimerRef.current = window.setTimeout(() => {
+        playbackFallbackTimerRef.current = null
+        if (!pendingUserPlaybackRef.current) return
+
+        pendingUserPlaybackRef.current = false
+        setEmbedState('ready')
+        reportMusicPlayerError(
+          'Spotify did not become ready after the album-cover action.',
+        )
+      }, spotifyReadyFallbackDelay)
+      return
+    }
+
+    pendingUserPlaybackRef.current = false
+    programmaticStartPendingRef.current = true
+    if (
+      loadedItemIdRef.current !== nextFeatured.item.id &&
+      !prepareLivePlayback(nextFeatured)
+    ) {
+      programmaticStartPendingRef.current = false
+      return
+    }
+
+    clearPlaybackFallback()
+    setEmbedState('requesting')
+    controller.play()
+
+    playbackFallbackTimerRef.current = window.setTimeout(() => {
+      playbackFallbackTimerRef.current = null
+      setEmbedState((currentState) => {
+        if (currentState === 'playing') return currentState
+
+        reportMusicPlayerError(
+          'Spotify did not confirm playback after the album-cover action.',
+        )
+        programmaticStartPendingRef.current = false
+        return 'ready'
+      })
+    }, playbackFallbackDelay)
+  }, [clearPlaybackFallback, prepareLivePlayback])
+
+  const allowLivePlayback = useCallback(() => {
+    autoFollowEnabledRef.current = true
+    requestLivePlayback()
+  }, [requestLivePlayback])
+
+  const stopAutoFollow = useCallback(() => {
+    autoFollowEnabledRef.current = false
+    programmaticStartPendingRef.current = false
+    clearPlaybackFallback()
+    clearFollowUpRefresh()
+    setEmbedState('paused')
+  }, [clearFollowUpRefresh, clearPlaybackFallback])
+
+  const pauseLivePlayback = useCallback(() => {
+    const controller = embedControllerRef.current
+    if (!controller) {
+      reportMusicPlayerError('Pause was requested without an active player.')
+      return
+    }
+
+    controller.pause()
+    stopAutoFollow()
+  }, [stopAutoFollow])
+
+  const scheduleFollowUpRefresh = useCallback((delay: number) => {
+    if (!autoFollowEnabledRef.current) return
+
+    if (followUpRefreshTimerRef.current !== null) {
+      window.clearTimeout(followUpRefreshTimerRef.current)
+    }
+
+    followUpRefreshTimerRef.current = window.setTimeout(() => {
+      followUpRefreshTimerRef.current = null
+      refreshCurrentlyPlayingRef.current()
+    }, delay)
+  }, [])
+
+  const refreshCurrentlyPlaying = useCallback(async () => {
+    if (
+      !autoFollowEnabledRef.current ||
+      endRefreshInFlightRef.current
+    ) {
+      return
+    }
+
+    endRefreshInFlightRef.current = true
+    setEmbedState('requesting')
+    followUpAbortRef.current?.abort()
+    const controller = new AbortController()
+    followUpAbortRef.current = controller
+
+    try {
+      const current = await fetchJson<CurrentlyPlayingResponse>(
+        '/currently-playing',
+        controller.signal,
+      )
+
+      if (!autoFollowEnabledRef.current) return
+
+      if (current.isPlaying && current.item) {
+        const nextFeatured: FeaturedItem = {
+          item: current.item,
+          mode: 'live',
+        }
+
+        featuredRef.current = nextFeatured
+        setFeatured(nextFeatured)
+        setFeaturedState('ready')
+        requestLivePlayback(nextFeatured)
+        return
+      }
+
+      const finishedFeature = featuredRef.current
+      if (finishedFeature) {
+        const recentFeature: FeaturedItem = {
+          ...finishedFeature,
+          mode: 'recent',
+        }
+        featuredRef.current = recentFeature
+        setFeatured(recentFeature)
+        setFeaturedState('ready')
+      } else {
+        setFeaturedState('empty')
+      }
+      setEmbedState('ready')
+    } catch (error) {
+      if (!isAbortError(error) && autoFollowEnabledRef.current) {
+        reportMusicPlayerError(
+          'Could not refresh the live track after playback ended.',
+          error,
+        )
+        setEmbedState('ready')
+        scheduleFollowUpRefresh(5000)
+      }
+    } finally {
+      if (followUpAbortRef.current === controller) {
+        followUpAbortRef.current = null
+      }
+      endRefreshInFlightRef.current = false
+    }
+  }, [requestLivePlayback, scheduleFollowUpRefresh])
+
+  useEffect(() => {
+    refreshCurrentlyPlayingRef.current = () => {
+      void refreshCurrentlyPlaying()
+    }
+  }, [refreshCurrentlyPlaying])
 
   useEffect(() => {
     if (!open) return
@@ -268,12 +635,41 @@ export default function MusicPanel({
         )
 
         if (current.isPlaying && current.item) {
-          setFeatured({ item: current.item, mode: 'live' })
+          const nextFeatured: FeaturedItem = {
+            item: current.item,
+            mode: 'live',
+          }
+          const existingFeature = featuredRef.current
+
+          if (
+            playbackSessionStartedRef.current &&
+            existingFeature?.mode === 'live' &&
+            existingFeature.item.id === nextFeatured.item.id
+          ) {
+            setFeaturedState('ready')
+            return
+          }
+
+          featuredRef.current = nextFeatured
+          setFeatured(nextFeatured)
+          setFeaturedState('ready')
+          return
+        }
+
+        if (playbackHasStartedRef.current) {
           setFeaturedState('ready')
           return
         }
       } catch (error) {
         if (isAbortError(error)) return
+        reportMusicPlayerError(
+          'Could not load the currently playing item.',
+          error,
+        )
+        if (playbackHasStartedRef.current) {
+          setFeaturedState('ready')
+          return
+        }
       }
 
       try {
@@ -284,13 +680,22 @@ export default function MusicPanel({
         const latestItem = Array.isArray(recent.items) ? recent.items[0] : null
 
         if (latestItem) {
-          setFeatured({ item: latestItem, mode: 'recent' })
+          const nextFeatured: FeaturedItem = {
+            item: latestItem,
+            mode: 'recent',
+          }
+          featuredRef.current = nextFeatured
+          setFeatured(nextFeatured)
           setFeaturedState('ready')
         } else {
           setFeaturedState('empty')
         }
       } catch (error) {
         if (!isAbortError(error)) {
+          reportMusicPlayerError(
+            'Could not load the recently played fallback.',
+            error,
+          )
           setFeaturedState('error')
         }
       }
@@ -311,6 +716,10 @@ export default function MusicPanel({
         )
       } catch (error) {
         if (!isAbortError(error)) {
+          reportMusicPlayerError(
+            'Could not load music recommendations.',
+            error,
+          )
           setRecommendationsState('error')
         }
       }
@@ -319,8 +728,11 @@ export default function MusicPanel({
     queueMicrotask(() => {
       if (signal.aborted) return
 
-      setFeatured(null)
-      setFeaturedState('loading')
+      if (!playbackSessionStartedRef.current) {
+        featuredRef.current = null
+        setFeatured(null)
+        setFeaturedState('loading')
+      }
       setRecommendations(null)
       setRecommendationsState('loading')
       void loadFeatured()
@@ -330,16 +742,240 @@ export default function MusicPanel({
     return () => controller.abort()
   }, [open])
 
+  const livePlayerAvailable =
+    featuredState === 'ready' &&
+    featured?.mode === 'live' &&
+    Boolean(playbackSource(featured.item))
+
+  useEffect(() => {
+    if (!livePlayerAvailable || !embedHostRef.current) return
+
+    const initialFeatured = featuredRef.current
+    if (!initialFeatured || initialFeatured.mode !== 'live') return
+
+    const source = playbackSource(initialFeatured.item)
+    if (!source) {
+      reportMusicPlayerError('The live item does not have a Spotify source.')
+      queueMicrotask(() => setEmbedState('ready'))
+      return
+    }
+
+    let active = true
+    const host = embedHostRef.current
+    setEmbedReady(false)
+
+    void loadSpotifyIframeApi()
+      .then((api) => {
+        if (!active) return
+
+        const contentOption = initialFeatured.item.uri
+          ? { uri: initialFeatured.item.uri }
+          : { url: source }
+
+        api.createController(
+          host,
+          {
+            ...contentOption,
+            width: '100%',
+            height: spotifyEmbedHeight,
+          },
+          (controller) => {
+            if (!active) {
+              controller.destroy()
+              return
+            }
+
+            embedControllerRef.current = controller
+            // createController has already loaded this track at its beginning.
+            // Reloading it here leaves the Embed between entities when Play runs.
+            loadedItemIdRef.current = initialFeatured.item.id
+            const configureEmbedFrame = () => {
+              const embedFrame =
+                embedEngineRef.current?.querySelector<HTMLIFrameElement>(
+                  'iframe',
+                )
+              if (!embedFrame) return
+
+              embedFrame.tabIndex = -1
+              embedFrame.setAttribute(
+                'allow',
+                'autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture',
+              )
+            }
+            configureEmbedFrame()
+
+            controller.addListener('ready', () => {
+              if (!active) return
+
+              controllerReadyRef.current = true
+              setEmbedReady(true)
+              configureEmbedFrame()
+
+              const currentFeature = featuredRef.current
+              if (!currentFeature || currentFeature.mode !== 'live') return
+
+              if (currentFeature.item.id !== loadedItemIdRef.current) {
+                prepareLivePlayback(currentFeature)
+              }
+
+              const playbackWasRequested =
+                pendingUserPlaybackRef.current ||
+                autoFollowEnabledRef.current
+
+              if (playbackWasRequested) {
+                requestLivePlayback(currentFeature)
+              } else {
+                setEmbedState(
+                  playbackSessionStartedRef.current
+                    ? 'paused'
+                    : 'ready',
+                )
+              }
+            })
+
+            controller.addListener('playback_started', () => {
+              if (!active) return
+
+              clearPlaybackFallback()
+              programmaticStartPendingRef.current = false
+              autoFollowEnabledRef.current = true
+              playbackHasStartedRef.current = true
+              playbackSessionStartedRef.current = true
+              setEmbedState('playing')
+            })
+
+            controller.addListener('playback_update', (event) => {
+              if (!active) return
+
+              const {
+                duration = 0,
+                isBuffering = false,
+                isPaused,
+                position = 0,
+              } = event.data ?? {}
+              const previousDuration = lastPlaybackDurationRef.current
+              const previousPosition = lastPlaybackPositionRef.current
+              const effectiveDuration = duration || previousDuration
+              const reachedEnd = effectiveDuration > 0 && (
+                position >= effectiveDuration - 250 ||
+                (
+                  isPaused === true &&
+                  previousPosition >= effectiveDuration - 1500
+                )
+              )
+
+              lastPlaybackDurationRef.current = duration
+              lastPlaybackPositionRef.current = position
+
+              if (
+                autoFollowEnabledRef.current &&
+                playbackHasStartedRef.current &&
+                reachedEnd
+              ) {
+                playbackHasStartedRef.current = false
+                programmaticStartPendingRef.current = false
+                setEmbedState('requesting')
+                void refreshCurrentlyPlaying()
+                return
+              }
+
+              if (isPaused === false && !isBuffering) {
+                programmaticStartPendingRef.current = false
+                autoFollowEnabledRef.current = true
+                playbackHasStartedRef.current = true
+                playbackSessionStartedRef.current = true
+                setEmbedState('playing')
+                return
+              }
+
+              if (
+                isPaused === true &&
+                !isBuffering &&
+                playbackHasStartedRef.current &&
+                !programmaticStartPendingRef.current
+              ) {
+                stopAutoFollow()
+              }
+            })
+          },
+        )
+      })
+      .catch((error) => {
+        if (!active) return
+
+        pendingUserPlaybackRef.current = false
+        clearPlaybackFallback()
+        setEmbedReady(false)
+        reportMusicPlayerError('Could not initialize Spotify playback.', error)
+        setEmbedState('ready')
+      })
+
+    return () => {
+      active = false
+      clearPlaybackFallback()
+      pendingUserPlaybackRef.current = false
+      controllerReadyRef.current = false
+      setEmbedReady(false)
+      loadedItemIdRef.current = null
+      lastPlaybackDurationRef.current = 0
+      lastPlaybackPositionRef.current = 0
+      playbackHasStartedRef.current = false
+      embedControllerRef.current?.destroy()
+      embedControllerRef.current = null
+    }
+  }, [
+    clearPlaybackFallback,
+    livePlayerAvailable,
+    prepareLivePlayback,
+    refreshCurrentlyPlaying,
+    requestLivePlayback,
+    stopAutoFollow,
+  ])
+
+  useEffect(() => {
+    if (
+      !livePlayerAvailable ||
+      !controllerReadyRef.current ||
+      featured?.mode !== 'live' ||
+      loadedItemIdRef.current === featured.item.id
+    ) {
+      return
+    }
+
+    if (autoFollowEnabledRef.current) {
+      requestLivePlayback(featured)
+    } else {
+      prepareLivePlayback(featured)
+      setEmbedState(
+        playbackSessionStartedRef.current ? 'paused' : 'ready',
+      )
+    }
+  }, [
+    featured,
+    livePlayerAvailable,
+    prepareLivePlayback,
+    requestLivePlayback,
+  ])
+
   useEffect(() => {
     if (phase !== 'closed' || open) return
 
     queueMicrotask(() => {
-      setFeatured(null)
-      setFeaturedState('loading')
+      if (!playbackSessionStartedRef.current) {
+        featuredRef.current = null
+        setFeatured(null)
+        setFeaturedState('loading')
+        setEmbedState('ready')
+      }
       setRecommendations(null)
       setRecommendationsState('loading')
     })
   }, [open, phase])
+
+  useEffect(() => () => {
+    clearPlaybackFallback()
+    clearFollowUpRefresh()
+  }, [clearFollowUpRefresh, clearPlaybackFallback])
 
   useEffect(() => {
     if (!open) return
@@ -390,8 +1026,6 @@ export default function MusicPanel({
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [isMobile, onClose, open])
 
-  if (phase === 'closed') return null
-
   const live = featured?.mode === 'live'
   const statusLabel = live ? 'Live' : 'Offline'
   const statusClassName =
@@ -402,174 +1036,179 @@ export default function MusicPanel({
         : 'is-offline'
 
   return (
-    <div
-      className={`music-layer is-${phase}`}
-      aria-hidden={!open ? true : undefined}
-      inert={!open ? true : undefined}
-    >
+    <>
       <div
-        className="music-backdrop"
-        aria-hidden="true"
-        onClick={onClose}
-      />
-
-      <section
-        ref={panelRef}
-        className="music-panel"
-        id="music-panel"
-        role="dialog"
-        aria-labelledby="music-panel-title"
-        aria-modal={isMobile ? true : undefined}
-        tabIndex={-1}
+        className={`music-layer is-${phase}`}
+        aria-hidden={!open ? true : undefined}
+        inert={!open ? true : undefined}
       >
-        <span className="music-panel-frame" aria-hidden="true" />
-
-        <header className="music-panel-header">
-          <div className="music-motion-item" style={motionStyle(0)}>
-            <p>Personal soundtrack</p>
-            <h2 id="music-panel-title">Kendrick’s Player</h2>
-          </div>
-          <button
-            ref={closeButtonRef}
-            className="music-close-button music-motion-item"
-            type="button"
-            onClick={onClose}
-            style={motionStyle(1)}
-          >
-            Close
-          </button>
-        </header>
+        <div
+          className="music-backdrop"
+          aria-hidden="true"
+          onClick={onClose}
+        />
 
         <section
-          className="music-feature"
-          aria-labelledby="music-feature-title"
-          aria-busy={featuredState === 'loading'}
+          ref={panelRef}
+          className="music-panel"
+          id="music-panel"
+          role="dialog"
+          aria-labelledby="music-panel-title"
+          aria-modal={isMobile ? true : undefined}
+          tabIndex={-1}
         >
-          <div
-            className={`music-status ${statusClassName} music-motion-item`}
-            role="status"
-            aria-live="polite"
-            style={motionStyle(1)}
-          >
-            <span className="music-status-dot" aria-hidden="true" />
-            <span>{statusLabel}</span>
-          </div>
-          <h3
-            className="music-motion-item"
-            id="music-feature-title"
-            style={motionStyle(2)}
-          >
-            {live ? 'Now playing' : 'Recently played'}
-          </h3>
+          <span className="music-panel-frame" aria-hidden="true" />
 
-          {featuredState === 'loading' && (
-            <div
-              className="music-feature-skeleton music-motion-item"
-              aria-hidden="true"
-              style={motionStyle(3)}
-            >
-              <span />
-              <span>
-                <i />
-                <i />
-                <i />
-              </span>
+          <header className="music-panel-header">
+            <div className="music-motion-item" style={motionStyle(0)}>
+              <p>Personal soundtrack</p>
+              <h2 id="music-panel-title">Kendrick’s Player</h2>
             </div>
-          )}
-
-          {featuredState === 'ready' && featured && (
-            <FeaturedCard item={featured.item} />
-          )}
-
-          {featuredState === 'empty' && (
-            <p
-              className="music-empty-state music-motion-item music-data-reveal"
-              style={motionStyle(3)}
+            <button
+              ref={closeButtonRef}
+              className="music-close-button music-motion-item"
+              type="button"
+              onClick={onClose}
+              style={motionStyle(1)}
             >
-              No recent listening history is available right now.
-            </p>
-          )}
+              Close
+            </button>
+          </header>
 
-          {featuredState === 'error' && (
-            <p
-              className="music-empty-state music-motion-item music-data-reveal"
-              style={motionStyle(3)}
+          <section
+            className="music-feature"
+            aria-labelledby="music-feature-title"
+            aria-busy={featuredState === 'loading'}
+          >
+            <div
+              className={`music-status ${statusClassName} music-motion-item`}
+              role="status"
+              aria-live="polite"
+              style={motionStyle(1)}
             >
-              Listening activity is temporarily unavailable.
-            </p>
-          )}
-        </section>
+              <span className="music-status-dot" aria-hidden="true" />
+              <span>{statusLabel}</span>
+            </div>
+            <h3
+              className="music-motion-item"
+              id="music-feature-title"
+              style={motionStyle(2)}
+            >
+              {live ? 'Now playing' : 'Recently played'}
+            </h3>
 
-        <section
-          className="music-recommendations"
-          aria-labelledby="music-recommendations-title"
-          aria-busy={recommendationsState === 'loading'}
-        >
-          <div
-            className="music-recommendations-header music-motion-item"
-            style={motionStyle(4)}
-          >
-            <h3 id="music-recommendations-title">Kendrick’s Recommendations</h3>
-            {recommendations?.source.spotifyUrl && (
-              <a
-                href={recommendations.source.spotifyUrl}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Playlist ↗
-              </a>
-            )}
-          </div>
-
-          <div
-            className="music-recommendations-list"
-            tabIndex={recommendationsState === 'ready' ? 0 : -1}
-            aria-label="Kendrick’s Spotify recommendations"
-          >
-            {recommendationsState === 'loading' && [0, 1, 2, 3].map((index) => (
+            {featuredState === 'loading' && (
               <div
-                className="music-row-skeleton music-motion-item"
-                key={index}
+                className="music-feature-skeleton music-motion-item"
                 aria-hidden="true"
-                style={motionStyle(5 + index)}
+                style={motionStyle(3)}
               >
                 <span />
                 <span>
                   <i />
                   <i />
+                  <i />
                 </span>
               </div>
-            ))}
+            )}
 
-            {recommendationsState === 'ready' &&
-              recommendations?.items.map((item, index) => (
-                <RecommendationRow
-                  index={index}
-                  item={item}
-                  key={item.id}
-                />
+            {featuredState === 'ready' && featured && (
+              <FeaturedCard
+                embedReady={embedReady}
+                embedState={embedState}
+                item={featured.item}
+                live={featured.mode === 'live'}
+                onPause={pauseLivePlayback}
+                onPlay={allowLivePlayback}
+              />
+            )}
+
+            {featuredState === 'empty' && (
+              <p
+                className="music-empty-state music-motion-item music-data-reveal"
+                style={motionStyle(3)}
+              >
+                No recent listening history is available right now.
+              </p>
+            )}
+
+          </section>
+
+          <section
+            className="music-recommendations"
+            aria-labelledby="music-recommendations-title"
+            aria-busy={recommendationsState === 'loading'}
+          >
+            <div
+              className="music-recommendations-header music-motion-item"
+              style={motionStyle(4)}
+            >
+              <h3 id="music-recommendations-title">Kendrick’s Recommendations</h3>
+              {recommendations?.source.spotifyUrl && (
+                <a
+                  href={recommendations.source.spotifyUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Playlist ↗
+                </a>
+              )}
+            </div>
+
+            <div
+              className="music-recommendations-list"
+              tabIndex={recommendationsState === 'ready' ? 0 : -1}
+              aria-label="Kendrick’s Spotify recommendations"
+            >
+              {recommendationsState === 'loading' && [0, 1, 2, 3].map((index) => (
+                <div
+                  className="music-row-skeleton music-motion-item"
+                  key={index}
+                  aria-hidden="true"
+                  style={motionStyle(5 + index)}
+                >
+                  <span />
+                  <span>
+                    <i />
+                    <i />
+                  </span>
+                </div>
               ))}
 
-            {recommendationsState === 'empty' && (
-              <p
-                className="music-empty-state music-motion-item music-data-reveal"
-                style={motionStyle(5)}
-              >
-                No recommendations are available right now.
-              </p>
-            )}
+              {recommendationsState === 'ready' &&
+                recommendations?.items.map((item, index) => (
+                  <RecommendationRow
+                    index={index}
+                    item={item}
+                    key={item.id}
+                  />
+                ))}
 
-            {recommendationsState === 'error' && (
-              <p
-                className="music-empty-state music-motion-item music-data-reveal"
-                style={motionStyle(5)}
-              >
-                Recommendations are temporarily unavailable.
-              </p>
-            )}
-          </div>
+              {recommendationsState === 'empty' && (
+                <p
+                  className="music-empty-state music-motion-item music-data-reveal"
+                  style={motionStyle(5)}
+                >
+                  No recommendations are available right now.
+                </p>
+              )}
+
+            </div>
+          </section>
         </section>
-      </section>
-    </div>
+      </div>
+
+      {featuredState === 'ready' &&
+        featured?.mode === 'live' &&
+        playbackSource(featured.item) && (
+          <div
+            className="music-embed-engine"
+            ref={embedEngineRef}
+            aria-hidden="true"
+          >
+            <div ref={embedHostRef} />
+          </div>
+        )}
+    </>
   )
 }

@@ -337,10 +337,12 @@ a {
 .music-button {
   position: relative;
   z-index: 3;
-  display: inline-grid;
+  display: inline-flex;
   min-width: 70px;
   min-height: 44px;
-  place-items: center;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
   padding: 0 15px;
   border: 1px solid var(--ink);
   background: var(--ink);
@@ -349,6 +351,12 @@ a {
   font-size: 0.78rem;
   font-weight: 700;
   letter-spacing: 0.04em;
+}
+
+.music-button-icon {
+  font-size: 0.62rem;
+  line-height: 1;
+  transform: translateX(1px);
 }
 
 .music-button:hover,
@@ -360,6 +368,7 @@ a {
 
 .music-button:focus-visible,
 .music-close-button:focus-visible,
+.music-artwork-control:focus-visible,
 .music-panel a:focus-visible,
 .music-recommendations-list:focus-visible {
   outline: 3px solid var(--gold);
@@ -370,6 +379,11 @@ a {
   position: fixed;
   inset: 0;
   z-index: 2;
+}
+
+.music-layer.is-closed {
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .music-backdrop {
@@ -562,9 +576,99 @@ a {
   text-decoration: none;
 }
 
-.music-feature-card:hover .music-open-label,
-.music-feature-card:focus-visible .music-open-label {
-  color: var(--ink);
+.music-feature-artwork-shell {
+  position: relative;
+  display: block;
+  width: var(--music-feature-artwork-size);
+  height: var(--music-feature-artwork-size);
+}
+
+.music-artwork-control {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: rgba(17, 17, 15, 0.18);
+  color: var(--paper);
+  cursor: pointer;
+  transition: background 160ms ease-out;
+}
+
+.music-artwork-control:hover,
+.music-artwork-control:focus-visible {
+  background: rgba(17, 17, 15, 0.36);
+}
+
+.music-artwork-control:disabled {
+  cursor: wait;
+}
+
+.music-artwork-playback-icon {
+  position: relative;
+  display: block;
+  width: 44px;
+  height: 44px;
+  border: 1px solid rgba(248, 248, 245, 0.9);
+  border-radius: 50%;
+  background: rgba(17, 17, 15, 0.72);
+  box-shadow: 0 4px 14px rgba(17, 17, 15, 0.2);
+}
+
+.music-artwork-playback-icon.is-play::before {
+  position: absolute;
+  top: 13px;
+  left: 17px;
+  width: 0;
+  height: 0;
+  border-top: 9px solid transparent;
+  border-bottom: 9px solid transparent;
+  border-left: 14px solid currentColor;
+  content: '';
+}
+
+.music-artwork-playback-icon.is-pause::before,
+.music-artwork-playback-icon.is-pause::after {
+  position: absolute;
+  top: 13px;
+  width: 5px;
+  height: 18px;
+  background: currentColor;
+  content: '';
+}
+
+.music-artwork-playback-icon.is-pause::before {
+  left: 15px;
+}
+
+.music-artwork-playback-icon.is-pause::after {
+  right: 15px;
+}
+
+.music-artwork-playback-icon.is-loading {
+  border: 2px solid rgba(248, 248, 245, 0.35);
+  border-top-color: currentColor;
+  animation: music-playback-spin 700ms linear infinite;
+}
+
+.music-embed-engine {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  width: 480px;
+  height: 152px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.music-embed-engine iframe {
+  display: block;
+  width: 480px;
+  height: 152px;
+  border: 0;
 }
 
 .music-feature-artwork,
@@ -596,15 +700,32 @@ a {
 }
 
 .music-feature-copy strong {
+  display: block;
   overflow: hidden;
   font-size: clamp(1.25rem, 6vw, 1.75rem);
   font-weight: 400;
   letter-spacing: -0.035em;
   line-height: 1.08;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.music-feature-copy > span:not(.music-open-label) {
+.music-feature-title {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  color: inherit;
+  text-decoration: none;
+}
+
+.music-feature-title:hover strong,
+.music-feature-title:focus-visible strong {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+}
+
+.music-feature-copy > span {
   margin-top: 8px;
   overflow: hidden;
   color: var(--muted);
@@ -616,16 +737,6 @@ a {
 .music-feature-copy .music-collection {
   margin-top: 3px;
   white-space: nowrap;
-}
-
-.music-open-label {
-  width: fit-content;
-  margin-top: 13px;
-  padding-bottom: 3px;
-  border-bottom: 1px solid currentColor;
-  color: var(--muted);
-  font-size: 0.68rem;
-  font-weight: 700;
 }
 
 .music-feature-skeleton {
@@ -800,6 +911,12 @@ a {
   100% {
     opacity: 0;
     transform: scale(1.3);
+  }
+}
+
+@keyframes music-playback-spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 
