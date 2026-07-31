@@ -386,12 +386,14 @@ export default function MusicPanel({
 }: MusicPanelProps) {
   const [featured, setFeatured] = useState<FeaturedItem | null>(null)
   const [featuredState, setFeaturedState] = useState<LoadState>('loading')
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false)
   const [embedReady, setEmbedReady] = useState(false)
   const [embedState, setEmbedState] = useState<EmbedState>('ready')
   const [recommendations, setRecommendations] =
     useState<RecommendationsResponse | null>(null)
   const [recommendationsState, setRecommendationsState] =
     useState<LoadState>('loading')
+  const initialLoadCompleteRef = useRef(false)
   const panelRef = useRef<HTMLElement | null>(null)
   const closeButtonRef = useRef<HTMLButtonElement | null>(null)
   const embedEngineRef = useRef<HTMLDivElement | null>(null)
@@ -626,6 +628,7 @@ export default function MusicPanel({
 
     const controller = new AbortController()
     const { signal } = controller
+    const isInitialLoad = !initialLoadCompleteRef.current
 
     const loadFeatured = async () => {
       try {
@@ -688,6 +691,8 @@ export default function MusicPanel({
           setFeatured(nextFeatured)
           setFeaturedState('ready')
         } else {
+          featuredRef.current = null
+          setFeatured(null)
           setFeaturedState('empty')
         }
       } catch (error) {
@@ -696,7 +701,9 @@ export default function MusicPanel({
             'Could not load the recently played fallback.',
             error,
           )
-          setFeaturedState('error')
+          if (isInitialLoad) {
+            setFeaturedState('error')
+          }
         }
       }
     }
@@ -720,23 +727,38 @@ export default function MusicPanel({
             'Could not load music recommendations.',
             error,
           )
-          setRecommendationsState('error')
+          if (isInitialLoad) {
+            setRecommendationsState('error')
+          }
         }
       }
+    }
+
+    const loadPanel = async () => {
+      await Promise.all([
+        loadFeatured(),
+        loadRecommendations(),
+      ])
+
+      if (signal.aborted || !isInitialLoad) return
+
+      initialLoadCompleteRef.current = true
+      setInitialLoadComplete(true)
     }
 
     queueMicrotask(() => {
       if (signal.aborted) return
 
-      if (!playbackSessionStartedRef.current) {
+      if (isInitialLoad && !playbackSessionStartedRef.current) {
         featuredRef.current = null
         setFeatured(null)
         setFeaturedState('loading')
       }
-      setRecommendations(null)
-      setRecommendationsState('loading')
-      void loadFeatured()
-      void loadRecommendations()
+      if (isInitialLoad) {
+        setRecommendations(null)
+        setRecommendationsState('loading')
+      }
+      void loadPanel()
     })
 
     return () => controller.abort()
@@ -957,21 +979,6 @@ export default function MusicPanel({
     requestLivePlayback,
   ])
 
-  useEffect(() => {
-    if (phase !== 'closed' || open) return
-
-    queueMicrotask(() => {
-      if (!playbackSessionStartedRef.current) {
-        featuredRef.current = null
-        setFeatured(null)
-        setFeaturedState('loading')
-        setEmbedState('ready')
-      }
-      setRecommendations(null)
-      setRecommendationsState('loading')
-    })
-  }, [open, phase])
-
   useEffect(() => () => {
     clearPlaybackFallback()
     clearFollowUpRefresh()
@@ -1050,20 +1057,31 @@ export default function MusicPanel({
 
         <section
           ref={panelRef}
-          className="music-panel"
+          className={`music-panel${
+            initialLoadComplete ? '' : ' is-initial-loading'
+          }`}
           id="music-panel"
           role="dialog"
-          aria-labelledby="music-panel-title"
+          aria-busy={!initialLoadComplete}
+          aria-label={!initialLoadComplete ? 'Kendrick’s Player' : undefined}
+          aria-labelledby={
+            initialLoadComplete ? 'music-panel-title' : undefined
+          }
           aria-modal={isMobile ? true : undefined}
           tabIndex={-1}
         >
           <span className="music-panel-frame" aria-hidden="true" />
 
           <header className="music-panel-header">
-            <div className="music-motion-item" style={motionStyle(0)}>
-              <p>Personal soundtrack</p>
-              <h2 id="music-panel-title">Kendrick’s Player</h2>
-            </div>
+            {initialLoadComplete && (
+              <div
+                className="music-motion-item music-data-reveal"
+                style={motionStyle(0)}
+              >
+                <p>Personal soundtrack</p>
+                <h2 id="music-panel-title">Kendrick’s Player</h2>
+              </div>
+            )}
             <button
               ref={closeButtonRef}
               className="music-close-button music-motion-item"
@@ -1075,126 +1093,127 @@ export default function MusicPanel({
             </button>
           </header>
 
-          <section
-            className="music-feature"
-            aria-labelledby="music-feature-title"
-            aria-busy={featuredState === 'loading'}
-          >
+          {!initialLoadComplete && (
             <div
-              className={`music-status ${statusClassName} music-motion-item`}
+              className="music-panel-loading"
               role="status"
               aria-live="polite"
-              style={motionStyle(1)}
             >
-              <span className="music-status-dot" aria-hidden="true" />
-              <span>{statusLabel}</span>
+              <span className="music-panel-spinner" aria-hidden="true" />
+              <span className="sr-only">Loading music player</span>
             </div>
-            <h3
-              className="music-motion-item"
-              id="music-feature-title"
-              style={motionStyle(2)}
-            >
-              {live ? 'Now playing' : 'Recently played'}
-            </h3>
+          )}
 
-            {featuredState === 'loading' && (
-              <div
-                className="music-feature-skeleton music-motion-item"
-                aria-hidden="true"
-                style={motionStyle(3)}
+          {initialLoadComplete && (
+            <>
+              <section
+                className="music-feature"
+                aria-labelledby="music-feature-title"
               >
-                <span />
-                <span>
-                  <i />
-                  <i />
-                  <i />
-                </span>
-              </div>
-            )}
-
-            {featuredState === 'ready' && featured && (
-              <FeaturedCard
-                embedReady={embedReady}
-                embedState={embedState}
-                item={featured.item}
-                live={featured.mode === 'live'}
-                onPause={pauseLivePlayback}
-                onPlay={allowLivePlayback}
-              />
-            )}
-
-            {featuredState === 'empty' && (
-              <p
-                className="music-empty-state music-motion-item music-data-reveal"
-                style={motionStyle(3)}
-              >
-                No recent listening history is available right now.
-              </p>
-            )}
-
-          </section>
-
-          <section
-            className="music-recommendations"
-            aria-labelledby="music-recommendations-title"
-            aria-busy={recommendationsState === 'loading'}
-          >
-            <div
-              className="music-recommendations-header music-motion-item"
-              style={motionStyle(4)}
-            >
-              <h3 id="music-recommendations-title">Kendrick’s Recommendations</h3>
-              {recommendations?.source.spotifyUrl && (
-                <a
-                  href={recommendations.source.spotifyUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Playlist ↗
-                </a>
-              )}
-            </div>
-
-            <div
-              className="music-recommendations-list"
-              tabIndex={recommendationsState === 'ready' ? 0 : -1}
-              aria-label="Kendrick’s Spotify recommendations"
-            >
-              {recommendationsState === 'loading' && [0, 1, 2, 3].map((index) => (
                 <div
-                  className="music-row-skeleton music-motion-item"
-                  key={index}
-                  aria-hidden="true"
-                  style={motionStyle(5 + index)}
+                  className={`music-status ${statusClassName} music-motion-item music-data-reveal`}
+                  role="status"
+                  aria-live="polite"
+                  style={motionStyle(1)}
                 >
-                  <span />
-                  <span>
-                    <i />
-                    <i />
-                  </span>
+                  <span className="music-status-dot" aria-hidden="true" />
+                  <span>{statusLabel}</span>
                 </div>
-              ))}
-
-              {recommendationsState === 'ready' &&
-                recommendations?.items.map((item, index) => (
-                  <RecommendationRow
-                    index={index}
-                    item={item}
-                    key={item.id}
-                  />
-                ))}
-
-              {recommendationsState === 'empty' && (
-                <p
-                  className="music-empty-state music-motion-item music-data-reveal"
-                  style={motionStyle(5)}
+                <h3
+                  className="music-motion-item music-data-reveal"
+                  id="music-feature-title"
+                  style={motionStyle(2)}
                 >
-                  No recommendations are available right now.
-                </p>
-              )}
+                  {live ? 'Now playing' : 'Recently played'}
+                </h3>
 
-            </div>
-          </section>
+                {featuredState === 'ready' && featured && (
+                  <FeaturedCard
+                    embedReady={embedReady}
+                    embedState={embedState}
+                    item={featured.item}
+                    live={featured.mode === 'live'}
+                    onPause={pauseLivePlayback}
+                    onPlay={allowLivePlayback}
+                  />
+                )}
+
+                {featuredState === 'empty' && (
+                  <p
+                    className="music-empty-state music-motion-item music-data-reveal"
+                    style={motionStyle(3)}
+                  >
+                    No recent listening history is available right now.
+                  </p>
+                )}
+
+                {featuredState === 'error' && (
+                  <p
+                    className="music-empty-state music-motion-item music-data-reveal"
+                    style={motionStyle(3)}
+                  >
+                    Listening activity is temporarily unavailable.
+                  </p>
+                )}
+              </section>
+
+              <section
+                className="music-recommendations"
+                aria-labelledby="music-recommendations-title"
+              >
+                <div
+                  className="music-recommendations-header music-motion-item music-data-reveal"
+                  style={motionStyle(4)}
+                >
+                  <h3 id="music-recommendations-title">
+                    Kendrick’s Recommendations
+                  </h3>
+                  {recommendations?.source.spotifyUrl && (
+                    <a
+                      href={recommendations.source.spotifyUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Playlist ↗
+                    </a>
+                  )}
+                </div>
+
+                <div
+                  className="music-recommendations-list"
+                  tabIndex={recommendationsState === 'ready' ? 0 : -1}
+                  aria-label="Kendrick’s Spotify recommendations"
+                >
+                  {recommendationsState === 'ready' &&
+                    recommendations?.items.map((item, index) => (
+                      <RecommendationRow
+                        index={index}
+                        item={item}
+                        key={item.id}
+                      />
+                    ))}
+
+                  {recommendationsState === 'empty' && (
+                    <p
+                      className="music-empty-state music-motion-item music-data-reveal"
+                      style={motionStyle(5)}
+                    >
+                      No recommendations are available right now.
+                    </p>
+                  )}
+
+                  {recommendationsState === 'error' && (
+                    <p
+                      className="music-empty-state music-motion-item music-data-reveal"
+                      style={motionStyle(5)}
+                    >
+                      Recommendations are temporarily unavailable.
+                    </p>
+                  )}
+                </div>
+              </section>
+            </>
+          )}
         </section>
       </div>
 
