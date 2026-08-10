@@ -230,8 +230,9 @@ const experience = [
     company: 'Tokonoma AI',
     companyHref: 'https://tokonoma.ai',
     description:
-      'Developing product MCP tools, enterprise SSO integrations, agent evaluation infrastructure, and continuous integration workflows.',
-    detail: 'Reduced token usage by 30% through MCP tool optimization.',
+      'Developed and optimized product MCP tools, reducing token usage by 30% on key memory storage and retrieval operations. Integrated enterprise identity providers with Google SAML SSO and added agent-level authorization through Okta Enterprise Managed Authorization.',
+    detail:
+      'Extended the internal agent evaluation framework to benchmark tool performance, resource usage, and LLM output quality, and built CI workflows for Starlette/Uvicorn services and PostgreSQL-backed components.',
     skills: [
       'Python',
       'MCP',
@@ -251,8 +252,9 @@ const experience = [
     company: 'WideSense Inc.',
     companyHref: 'https://www.linkedin.com/company/widesense/',
     description:
-      'Returned for three internship terms, building customer and administrative features across frontend, backend, and database layers.',
-    detail: 'Built an IoT analytics dashboard and helped maintain over 80% test coverage.',
+      'Built a full-stack IoT analytics dashboard that lets customers visualize device telemetry, filter historical trends, and inspect sensor-level performance in real time.',
+    detail:
+      'Wrote Jasmine unit and integration tests that contributed to over 80% code coverage, and designed PostgreSQL schema changes and Alembic migrations.',
     skills: ['Python', 'AngularJS', 'Flask', 'PostgreSQL', 'InfluxDB', 'Jasmine', 'Alembic'],
   },
   {
@@ -261,8 +263,9 @@ const experience = [
     company: 'Pluribus Networks',
     companyHref: 'https://www.arista.com/en/support/pluribus-resources',
     description:
-      'Built Python performance-test tooling for network switch fabrics and published high-volume stress-test data through Kafka.',
-    detail: 'Analyzed Elasticsearch-backed metrics in Kibana and Grafana.',
+      'Developed a network traffic replay tool to capture traffic and create new scenarios against a virtualized network environment.',
+    detail:
+      'Published replay traffic through Kafka to reproduce issues and benchmark performance, saving over $100K in hardware costs, and analyzed Elasticsearch-backed metrics in Kibana and Grafana.',
     skills: ['Python', 'Kafka', 'Elasticsearch', 'Kibana', 'Grafana'],
   },
 ]
